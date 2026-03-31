@@ -61,8 +61,10 @@ export class WakeUpManager {
       const helloOk = await gatewayClient.connect(gateway.wsUrl, token);
       log.info('Connected to gateway:', helloOk.server.version);
 
-      // 6. Bind services to gateway
+      // 6. Bind services to gateway + start video stream
       frameSender.bindGateway(gatewayClient);
+      // Strategy B: Start continuous video_frame event stream (5fps default)
+      frameSender.startContinuousStream();
 
       // 7. Start ASR
       const asrConfig = appStore.config.asr;
@@ -128,32 +130,33 @@ export class WakeUpManager {
   }
 
   /**
-   * Send user message (ASR transcript + optional image) to openclaw
+   * Send user message (ASR transcript + optional image) to openclaw.
+   *
+   * Uses chat.send (not 'send' which is for channel messages like WhatsApp/SMS).
+   * Strategy A: Attaches latest camera frame as an image attachment when available.
    */
   private async sendUserMessage(transcript: string): Promise<void> {
     const sessionStore = useSessionStore.getState();
-    const latestFrame = cameraManager.latestFrame;
 
     try {
-      const payload: Record<string, unknown> = {
-        message: transcript,
-      };
-
-      // Attach latest camera frame if available
-      if (latestFrame && sessionStore.isCameraActive) {
-        payload.image = latestFrame;
+      // Strategy A: Build attachments array with latest frame (if fresh)
+      const attachments: Array<Record<string, unknown>> = [];
+      const frameAttachment = frameSender.getLatestFrameAttachment();
+      if (frameAttachment && sessionStore.isCameraActive && frameSender.hasFreshFrame()) {
+        attachments.push(frameAttachment);
+        log.info('Attaching camera frame to chat.send (Strategy A)');
       }
 
-      const reply = await gatewayClient.rpc<{ payload: string }>('send', payload);
+      const reply = await gatewayClient.chatSend(transcript, { attachments: attachments.length > 0 ? attachments : undefined });
 
-      if (reply?.payload) {
+      if (reply) {
         // Add AI response to chat history
         sessionStore.addMessage({
           id: uuid(),
           role: 'assistant',
-          content: typeof reply.payload === 'string' ? reply.payload : JSON.stringify(reply.payload),
+          content: typeof reply === 'string' ? reply : JSON.stringify(reply),
           timestamp: Date.now(),
-          hasVideoContext: !!latestFrame,
+          hasVideoContext: attachments.length > 0,
         });
 
         // Play TTS response

@@ -7,8 +7,12 @@
 
 import type { GatewayClient } from '../gateway/GatewayClient';
 import { cameraManager } from './CameraManager';
+import { useSessionStore } from '@/store/useSessionStore';
 import { getLogger } from '@/utils/logger';
-import { DEFAULT_VIDEO_FPS } from '@/utils/constants';
+import {
+  DEFAULT_VIDEO_FPS,
+  DEFAULT_VIDEO_RESOLUTION,
+} from '@/utils/constants';
 
 const log = getLogger('frameSender');
 
@@ -16,21 +20,47 @@ export class FrameSender {
   private gateway: GatewayClient | null = null;
   private strategyBInterval: ReturnType<typeof setInterval> | null = null;
   private strategyBFps = DEFAULT_VIDEO_FPS;
+  /** Total frames sent via Strategy B since last start */
+  private strategyBSentCount = 0;
 
   bindGateway(gateway: GatewayClient): void {
     this.gateway = gateway;
   }
 
+  // ─── Strategy A: Snapshot attachment ──────────────────────────────
+
   /**
-   * Strategy A: Get the latest cached JPEG frame to attach in send() message.
-   * Returns base64-encoded JPEG (or null if no frame has been captured yet).
+   * Get the latest cached frame as a chat.send attachment.
+   * Returns attachment object (or null if no frame captured yet).
    */
-  getLatestFrameForSend(): string | null {
-    return cameraManager.latestFrame;
+  getLatestFrameAttachment(): Record<string, unknown> | null {
+    const frame = cameraManager.latestFrame;
+    if (!frame) return null;
+
+    const w = cameraManager.latestFrameWidth || DEFAULT_VIDEO_RESOLUTION.width;
+    const h = cameraManager.latestFrameHeight || DEFAULT_VIDEO_RESOLUTION.height;
+
+    return {
+      type: 'image',
+      mimeType: 'image/jpeg',
+      fileName: `frame_${Date.now()}.jpg`,
+      content: frame,
+      meta: { w, h },
+    };
   }
 
   /**
-   * Strategy B: Start continuous video_frame event streaming.
+   * Check if a fresh frame is available (captured within last 3 seconds).
+   */
+  hasFreshFrame(maxAgeMs: number = 3000): boolean {
+    if (!cameraManager.latestFrame) return false;
+    return Date.now() - cameraManager.latestFrameTimestamp < maxAgeMs;
+  }
+
+  // ─── Strategy B: Continuous event stream ──────────────────────────
+
+  /**
+   * Start continuous video_frame event streaming.
    * Sends frames at `fps` rate via GatewayClient.sendEvent('video_frame', ...).
    *
    * @param fps Frames per second for the continuous stream (default: 5)
@@ -38,22 +68,29 @@ export class FrameSender {
   startContinuousStream(fps: number = DEFAULT_VIDEO_FPS): void {
     this.stopContinuousStream();
     this.strategyBFps = fps;
+    this.strategyBSentCount = 0;
     const intervalMs = Math.round(1000 / fps);
 
-    log.info(`Starting continuous video_frame stream at ${fps}fps`);
+    log.info(`Starting continuous video_frame stream at ${fps}fps (${intervalMs}ms interval)`);
 
     this.strategyBInterval = setInterval(() => {
       if (!this.gateway) return;
 
-      const frame = this.getLatestFrameForSend();
+      const frame = cameraManager.latestFrame;
       if (!frame) return;
+
+      const w = cameraManager.latestFrameWidth || DEFAULT_VIDEO_RESOLUTION.width;
+      const h = cameraManager.latestFrameHeight || DEFAULT_VIDEO_RESOLUTION.height;
 
       this.gateway.sendEvent('video_frame', {
         base64_jpeg: frame,
-        w: 640,
-        h: 480,
+        w,
+        h,
         ts: Date.now(),
       });
+
+      this.strategyBSentCount++;
+      useSessionStore.getState().incrementFramesSent();
     }, intervalMs);
   }
 
@@ -64,8 +101,16 @@ export class FrameSender {
     if (this.strategyBInterval) {
       clearInterval(this.strategyBInterval);
       this.strategyBInterval = null;
-      log.info('Stopped continuous video_frame stream');
+      log.info(
+        `Stopped continuous video_frame stream (sent ${this.strategyBSentCount} frames this session)`,
+      );
+      this.strategyBSentCount = 0;
     }
+  }
+
+  /** Get total frames sent by current Strategy B session */
+  getStrategyBSentCount(): number {
+    return this.strategyBSentCount;
   }
 
   destroy(): void {

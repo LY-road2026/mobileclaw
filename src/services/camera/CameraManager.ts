@@ -17,6 +17,8 @@ export class CameraManager {
   /** Latest captured frame data (base64 string), updated by frame processor */
   public latestFrame: string | null = null;
   public latestFrameTimestamp: number = 0;
+  public latestFrameWidth: number = 0;
+  public latestFrameHeight: number = 0;
   public onFrameReady: ((dataBase64: string, width: number, height: number, timestamp: number) => void) | null = null;
 
   async initialize(): Promise<void> {
@@ -56,6 +58,8 @@ export class CameraManager {
   onNewFrame(dataBase64: string, width: number, height: number, timestamp: number): void {
     this.latestFrame = dataBase64;
     this.latestFrameTimestamp = timestamp;
+    this.latestFrameWidth = width;
+    this.latestFrameHeight = height;
     this.onFrameReady?.(dataBase64, width, height, timestamp);
   }
 }
