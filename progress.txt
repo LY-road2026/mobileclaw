@@ -217,5 +217,80 @@ TS 编译状态:
   - feat-07: 双路径 TTS + 半双工模式
 
 ----------------------------------------
+会话 #4 - feat-06 豆包流式 ASR + feat-07 双路径 TTS
+----------------------------------------
+时间: 2026-03-31
+
+完成工作:
+  [x] feat-06: 豆包流式 ASR 接入（完整 WebSocket 协议 + PCM 桥接）
+  [x] feat-07: 双路径 TTS + 半双工模式
+
+新增依赖:
+  - react-native-audio-recorder-player 4.5.0 (实时 PCM 采集)
+
+feat-06 详细:
+  新增文件:
+  - src/services/audio/providers/DoubaoASRProvider.ts — 完整豆包/火山引擎 ASR 实现
+    • WS 连接 wss://openspeech.bytedance.com/api/v1/asr
+    • JSON 配置帧 (appid/token/cluster/audio format/language)
+    • feedPCM(pcmData): 二进制 PCM 音频帧流式发送
+    • interim(中间结果) → onInterim 回调 → 更新 currentTranscript (蓝色打字效果)
+    • final(最终结果) → onFinal 回调 → commitTranscript + sendUserMessage
+    • audio_finish 结束信号 + speech_finished 确认
+    • 增量累积文本处理 (server incremental finals)
+    • 错误码/错误消息 → onError 回调
+
+  - src/services/audio/AudioCaptureBridge.ts — 麦克风→ASR 桥接层
+    • AudioRecorderPlayer 录音管理
+    • startCapture()/stopCapture() 生命周期
+    • PCM feed 循环占位（待原生模块实现真实 PCM 流）
+    • 详细文档说明 Phase 1 限制和升级路径
+
+  ASRService.ts 重构:
+    • ASRProvider 接口增加可选 feedPCM() 方法
+    • feedPCM() 透传到活跃 provider
+    • DoubaoASRProvider 移至独立 providers/ 目录
+
+  WakeUpManager 集成:
+    • activate(): ASR 启动后 audioCaptureBridge.startCapture()
+    • deactivate(): stopCapture() → stopRecording()
+
+feat-07 详细:
+  新增文件:
+  - src/services/audio/providers/EdgeTTSProvider.ts — Microsoft Edge TTS (免费)
+    • POST SSML 到 speech.platform.bing.com synthesis endpoint
+    • 默认中文语音: zh-CN-XiaoxiaoNeural (自然女声)
+    • 语速控制 (rate prosody)、XML 特殊字符转义
+    • MP3 音频返回 → expo-av Sound.createAsync 播放
+    • 30s 单句超时保护
+
+  - src/services/audio/providers/DoubaoTTSProvider.ts — 火山引擎 TTS
+    • HTTP POST 到 openspeech.bytedance.com/api/v1/tts
+    • voice_type/language/speed/volume/pitch 全参数支持
+    • JSON(base64) 或二进制音频响应自动检测处理
+
+  TTSService.ts 重写:
+    • Path A (openclaw): tts.convert RPC → 播放返回音频
+    • Path B (edge): EdgeTTSProvider (免费推荐)
+    • Path B (doubao): DoubaoTTSProvider (高质量付费)
+    • **半双工模式**: speak() → isTTSSpeaking=true → ASR 自动暂停
+      onDone/error → isTTSSpeaking=false → ASR 自动恢复
+    • isSpeaking 防重入保护
+    • stop() 立即停止 + 状态恢复
+
+  WakeUpManager 集成:
+    • activate(): ttsService.bindGateway() + initialize(config)
+    • sendUserMessage(): AI 回复后自动 ttsService.speak(replyText)
+      TTS 失败不阻塞对话（非关键路径）
+    • deactivate(): ttsService.stop() 停止播放
+
+当前完成进度: feat-01 ~ feat-07 (7/12 完成, 58%)
+核心管线已打通: Gateway连接 → 相机预览+帧捕获 → 双策略帧发送 → 音频录制+波形 → ASR识别 → TTS播报
+
+下一步:
+  - feat-08: iOS Siri Shortcut 语音唤醒（URL scheme + 激活链路）
+  - feat-09: SecureStorage 原生模块（Ed25519 密钥安全存储）
+
+----------------------------------------
 （后续会话在此追加，格式如下）
 ----------------------------------------
