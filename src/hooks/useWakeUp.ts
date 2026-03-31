@@ -10,7 +10,7 @@ import { useSessionStore } from '@/store/useSessionStore';
 import { wakeUpManager } from '@/services/wake/WakeUpManager';
 import type { ActivationParams } from '@/services/wake/UrlSchemeHandler';
 
-export function useWakeUp(navigation?: { navigate: (name: string) => void }) {
+export function useWakeUp(navigation?: { navigate: (name: string) => void; goBack: () => void }) {
   const mode = useSessionStore((s) => s.mode);
   const isActive = mode === 'active';
 
