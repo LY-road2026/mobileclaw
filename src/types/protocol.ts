@@ -60,7 +60,7 @@ export interface ClientInfo {
   version: string;      // e.g., "1.0.0"
   platform: string;     // "ios" | "android" | "macos"
   deviceFamily?: string;
-  mode: 'operator' | 'node';
+  mode: 'operator' | 'node' | 'ui';
   instanceId?: string;
 }
 

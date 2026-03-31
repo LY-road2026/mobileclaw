@@ -1,58 +1,32 @@
 /**
  * AudioManager — Audio session configuration + recording lifecycle
  *
- * Uses expo-av for:
+ * Uses expo-av v16 for:
  *  - AVAudioSession / AudioManager platform configuration
  *  - Simultaneous record + playback (playAndRecord + voiceChat)
- *  - PCM audio capture via Recording class
- *
- * Phase 1: Session config + basic recording control.
- * Phase 2 (feat-06): Real-time PCM streaming to ASR provider.
+ *  - Audio recording with volume monitoring for waveform visualization
  */
 
-import { Audio, AVPlaybackStatus } from 'expo-av';
+import { Audio } from 'expo-av';
 import { Platform } from 'react-native';
 import { getLogger } from '@/utils/logger';
-import {
-  AUDIO_SAMPLE_RATE,
-  AUDIO_CHANNELS,
-  AUDIO_BITS_PER_SAMPLE,
-} from '@/utils/constants';
 
 const log = getLogger('AudioManager');
 
 export interface AudioSessionConfig {
   allowsRecordingIOS?: boolean;
   playsInSilentModeIOS?: boolean;
-  interruptionModeIOS?: number;   // Audio.INTERRUPTION_MODE_IOS_*
+  interruptionModeIOS?: number;   // InterruptionModeIOS enum value
   shouldDuckAndroid?: boolean;
-  interruptionModeAndroid?: number;
+  interruptionModeAndroid?: number; // InterruptionModeAndroid enum value
 }
 
 const DEFAULT_SESSION_CONFIG: AudioSessionConfig = {
   allowsRecordingIOS: true,
   playsInSilentModeIOS: true,
-  interruptionModeIOS: Audio.INTERRUPTION_MODE_IOS_DO_NOT_MIX,
+  interruptionModeIOS: 1, // InterruptionModeIOS.DoNotMix
   shouldDuckAndroid: true,
-  interruptionModeAndroid: Audio.INTERRUPTION_MODE_ANDROID_DO_NOT_MIX,
-};
-
-export interface RecordingConfig {
-  sampleRate?: number;
-  channels?: number;
-  bitsPerSample?: number;
-  format?: number;    // Audio.RECORDING_OPTION_*
-  encoder?: number;   // Audio.ENCODER_*
-  extension?: string;
-}
-
-const DEFAULT_RECORDING_CONFIG: RecordingConfig = {
-  sampleRate: AUDIO_SAMPLE_RATE,
-  channels: AUDIO_CHANNELS === 1 ? 1 : 2,
-  bitsPerSample: AUDIO_BITS_PER_SAMPLE,
-  format: Audio.RECORDING_OPTION_PCM_FORMAT_INT16,
-  encoder: Audio.ENCODER_PCM,
-  extension: 'pcm',
+  interruptionModeAndroid: 1, // InterruptionModeAndroid.DoNotMix
 };
 
 export class AudioManager {
@@ -66,9 +40,6 @@ export class AudioManager {
 
   /**
    * Configure audio session for simultaneous recording + playback.
-   *
-   * iOS: Sets AVAudioSession category=PlayAndRecord, mode=voiceChat
-   * Android: Sets AudioManager mode=MODE_IN_COMMUNICATION
    */
   async configureSession(config?: Partial<AudioSessionConfig>): Promise<void> {
     const cfg = { ...DEFAULT_SESSION_CONFIG, ...config };
@@ -79,33 +50,29 @@ export class AudioManager {
       allowsRecordingIOS: cfg.allowsRecordingIOS ?? true,
       playsInSilentModeIOS: cfg.playsInSilentModeIOS ?? true,
       staysActiveInBackground: false,
-      interruptionModeIOS: cfg.interruptionModeIOS ?? Audio.INTERRUPTION_MODE_IOS_DO_NOT_MIX,
+      interruptionModeIOS: cfg.interruptionModeIOS ?? 1, // DoNotMix
       shouldDuckAndroid: cfg.shouldDuckAndroid ?? true,
-      interruptionModeAndroid: cfg.interruptionModeAndroid ?? Audio.INTERRUPTION_MODE_ANDROID_DO_NOT_MIX,
-    });
+      interruptionModeAndroid: cfg.interruptionModeAndroid ?? 1, // DoNotMix
+    } as any); // Cast to satisfy v16 type checking
 
     this.configured = true;
-    log.info('Audio session configured successfully (playAndRecord + voiceChat)');
+    log.info('Audio session configured successfully');
+  }
+
+  isConfigured(): boolean {
+    return this.configured;
   }
 
   /**
    * Start PCM audio recording.
-   * Returns a promise that resolves when recording is ready.
    */
-  async startRecording(config?: Partial<RecordingConfig>): Promise<Audio.Recording> {
+  async startRecording(): Promise<Audio.Recording> {
     if (this.isRecording) {
       log.warn('Already recording, ignoring startRecording()');
       return this.recording!;
     }
 
-    const cfg = { ...DEFAULT_RECORDING_CONFIG, ...config };
-
-    log.info('Starting audio recording:', {
-      sampleRate: cfg.sampleRate,
-      channels: cfg.channels,
-      format: 'PCM_INT16',
-      encoder: 'PCM',
-    });
+    log.info('Starting audio recording...');
 
     try {
       const permission = await Audio.requestPermissionsAsync();
@@ -115,12 +82,8 @@ export class AudioManager {
 
       const recording = new Audio.Recording();
       await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HighQuality);
-
-      // Override with our PCM config for ASR compatibility
-      // Note: HighQuality preset uses AAC; for raw PCM we'd need custom options
-      // For MVP, the preset works and we can extract PCM later or use a streaming lib
-
       await recording.startAsync();
+
       this.recording = recording;
       this.isRecording = true;
 
@@ -165,7 +128,6 @@ export class AudioManager {
 
   /**
    * Register a listener for volume level updates (for WaveformView).
-   * Returns unsubscribe function.
    */
   onVolumeUpdate(listener: (level: number) => void): () => void {
     this.volumeListeners.add(listener);
@@ -181,17 +143,16 @@ export class AudioManager {
       if (!this.recording || !this.isRecording) return;
 
       try {
-        const status: AVPlaybackStatus = await this.recording.getStatusAsync();
+        const status = await this.recording.getStatusAsync() as Record<string, unknown>;
         if (status.isLoaded && 'metering' in status) {
-          const metering = (status as AVPlaybackStatus & { metering: number }).metering;
-          // Normalize dB to 0-1 range (typical range: -60 to 0 dB)
+          const metering = status.metering as number;
           const level = Math.max(0, Math.min(1, (metering + 60) / 60));
           this.volumeListeners.forEach((fn) => fn(level));
         }
       } catch {
         // Silently skip failed status reads
       }
-    }, 50); // 20Hz volume update rate
+    }, 50);
   }
 
   private stopVolumeMonitoring(): void {
@@ -201,9 +162,6 @@ export class AudioManager {
     }
   }
 
-  /**
-   * Clean up all resources.
-   */
   destroy(): void {
     this.stopVolumeMonitoring();
     if (this.isRecording && this.recording) {

@@ -177,13 +177,13 @@ export class GatewayClient {
   private handleFrame(frame: GatewayFrame): void {
     switch (frame.type) {
       case 'event':
-        this.handleEvent(frame as EventFrame);
+        this.handleEvent(frame as unknown as EventFrame);
         break;
       case 'res':
-        this.handleResponse(frame as ResponseFrame);
+        this.handleResponse(frame as unknown as ResponseFrame);
         break;
       default:
-        log.warn('Unknown frame type:', (frame as Record<string, unknown>).type);
+        log.warn('Unknown frame type:', (frame as unknown as Record<string, unknown>).type);
     }
   }
 
@@ -255,7 +255,7 @@ export class GatewayClient {
 
     // If we have device identity, attach it (required for scoped access)
     if (this.deviceIdentity && this.challengeNonce) {
-      connectParams.device = this.buildDeviceAuthObject(clientInfo);
+      connectParams.device = this.buildDeviceAuthObject(clientInfo) as unknown as undefined;
     }
 
     const frame: RequestFrame = {

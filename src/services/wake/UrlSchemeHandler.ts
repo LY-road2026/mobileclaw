@@ -29,14 +29,11 @@ export interface ActivationParams {
 
 class UrlSchemeHandler {
   private initialized = false;
+  private cleanup: (() => void) | null = null;
 
   /**
    * Initialize URL scheme handler.
    * Must be called once at app startup (in App.tsx).
-   *
-   * Handles:
-   *   - Cold start: Linking.getInitialURL() for app launched via URL
-   *   - Warm start: Linking.addEventListener('url', ...) for foreground events
    */
   async initialize(): Promise<void> {
     if (this.initialized) return;
@@ -54,11 +51,16 @@ class UrlSchemeHandler {
       this.handleUrl(event.url);
     });
 
+    this.cleanup = () => { subscription.remove(); };
     this.initialized = true;
     log.info('URL scheme handler initialized (scheme: %s)', URL_SCHEME);
+  }
 
-    // Return unsubscribe for cleanup (not normally needed)
-    return () => subscription.remove();
+  /** Unsubscribe from URL events (call on unmount) */
+  dispose(): void {
+    this.cleanup?.();
+    this.cleanup = null;
+    this.initialized = false;
   }
 
   /**
@@ -74,7 +76,8 @@ class UrlSchemeHandler {
 
       const parsed = new URL(url);
       const pathname = parsed.pathname; // e.g., "/activate"
-      const params = Object.fromEntries(parsed.searchParams.entries());
+      const params: Record<string, string> = {};
+    parsed.searchParams.forEach((value, key) => { params[key] = value; });
 
       switch (pathname) {
         case `/${URL_ACTIVATE_PATH}`:

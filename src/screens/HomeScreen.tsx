@@ -1,18 +1,19 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
 import { useAppStore } from '@/store/useAppStore';
+import type { GatewayConfig } from '@/types/config';
 import { GatewayCard } from '@/components/common/GatewayCard';
 import { StatusIndicator } from '@/components/common/StatusIndicator';
 import { wakeUpManager } from '@/services/wake/WakeUpManager';
 
-export function HomeScreen({ navigation }: { navigation: any }) {
-  const { config, activeGateway, gateways } = useAppStore();
+export function HomeScreen({ navigation }: { navigation: { navigate: (name: string) => void; goBack: () => void } }) {
+  const { config, activeGateway } = useAppStore();
+  const gateways = config.gateways;
 
   const handleActivate = async () => {
     try {
       await wakeUpManager.activate();
-      // Navigate to session screen after successful activation
-      navigation.navigate('Session' as never);
+      navigation.navigate('Session');
     } catch (error) {
       console.error('Activation failed:', error);
     }
@@ -22,17 +23,17 @@ export function HomeScreen({ navigation }: { navigation: any }) {
     <View style={{ flex: 1, backgroundColor: '#0a0a0f' }}>
       {/* Header */}
       <View style={{
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
+        flexDirection: 'row' as const,
+        justifyContent: 'space-between' as const,
+        alignItems: 'center' as const,
         paddingHorizontal: 20,
         paddingTop: 60,
         paddingBottom: 16,
       }}>
-        <Text style={{ color: '#fff', fontSize: 24, fontWeight: 'bold' }}>
+        <Text style={{ color: '#fff', fontSize: 24, fontWeight: 'bold' as const }}>
           🦞 MobileClaw
         </Text>
-        <TouchableOpacity onPress={() => navigation.navigate('Settings' as never)}>
+        <TouchableOpacity onPress={() => navigation.navigate('Settings')}>
           <Text style={{ color: '#888', fontSize: 18 }}>⚙️</Text>
         </TouchableOpacity>
       </View>
@@ -40,7 +41,7 @@ export function HomeScreen({ navigation }: { navigation: any }) {
       {/* Status bar */}
       <View style={{ paddingHorizontal: 20, marginBottom: 16 }}>
         <StatusIndicator
-          status={'disconnected'} // Will be wired to real connection status
+          status={'disconnected'}
           gatewayName={activeGateway?.name}
         />
       </View>
@@ -54,18 +55,18 @@ export function HomeScreen({ navigation }: { navigation: any }) {
           /* Empty state */
           <View style={{
             flex: 1,
-            justifyContent: 'center',
-            alignItems: 'center',
+            justifyContent: 'center' as const,
+            alignItems: 'center' as const,
             paddingVertical: 60,
           }}>
             <Text style={{ fontSize: 48, marginBottom: 16 }}>🦞</Text>
-            <Text style={{ color: '#888', fontSize: 16, textAlign: 'center' }}>
+            <Text style={{ color: '#888', fontSize: 16, textAlign: 'center' as const }}>
               暂无已配置的 Gateway{'\n'}
               点击右上角 ⚙️ 添加你的龙虾
             </Text>
           </View>
         ) : (
-          gateways.map((gw) => (
+          gateways.map((gw: GatewayConfig) => (
             <GatewayCard
               key={gw.id}
               gateway={gw}
@@ -92,10 +93,10 @@ export function HomeScreen({ navigation }: { navigation: any }) {
             backgroundColor: '#22c55e',
             borderRadius: 16,
             paddingVertical: 18,
-            alignItems: 'center',
+            alignItems: 'center' as const,
           }}
         >
-          <Text style={{ color: '#000', fontSize: 18, fontWeight: '700' }}>
+          <Text style={{ color: '#000', fontSize: 18, fontWeight: '700' as const }}>
             🎤 Tap to Talk
           </Text>
         </TouchableOpacity>
