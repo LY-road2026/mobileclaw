@@ -11,6 +11,7 @@
 import { audioManager } from '@/services/audio/AudioManager';
 import { audioCaptureBridge } from '@/services/audio/AudioCaptureBridge';
 import { cameraManager } from '@/services/camera/CameraManager';
+import { FeishuPushService } from '@/services/history/FeishuPushService';
 import { frameSender } from '@/services/camera/frameSender';
 import { asrService } from '@/services/audio/ASRService';
 import { ttsService } from '@/services/audio/TTSService';
@@ -134,6 +135,9 @@ export class WakeUpManager {
 
     this.stopIdleMonitor();
 
+    // Push conversation history to Feishu before teardown
+    await this.pushToFeishu();
+
     // Graceful shutdown order matters!
     // 0. Stop PCM capture bridge (stops feeding ASR)
     await audioCaptureBridge.stopCapture();
@@ -210,6 +214,37 @@ export class WakeUpManager {
       }
     } catch (error) {
       log.error('Failed to send message:', error);
+    }
+  }
+
+  /**
+   * Push completed conversation turn to Feishu/Lark.
+   * Called during deactivate() before teardown.
+   */
+  private async pushToFeishu(): Promise<void> {
+    const sessionStore = useSessionStore.getState();
+    const { messages, sessionId, sessionStartTime } = sessionStore;
+
+    if (!sessionId || messages.length === 0) return;
+
+    // Find the last user message and AI response pair
+    let lastUserMsg = messages.filter((m) => m.role === 'user').pop();
+    let lastAiMsg = messages.filter((m) => m.role === 'assistant').pop();
+
+    if (!lastUserMsg || !lastAiMsg) return;
+
+    const durationMs = sessionStartTime ? Date.now() - sessionStartTime : 0;
+
+    try {
+      await FeishuPushService.pushTurn(
+        '🦞 MobileClaw',
+        lastUserMsg,
+        lastAiMsg,
+        { sessionId, durationMs },
+      );
+      log.info('Feishu push sent successfully');
+    } catch (err) {
+      log.warn('Feishu push failed (non-critical):', err);
     }
   }
 
