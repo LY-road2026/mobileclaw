@@ -1,0 +1,59 @@
+========================================
+ MobileClaw 项目进度日志
+ 基于长时运行 Agent 方法论
+========================================
+
+项目概述:
+  iOS/Android 多模态语音+视觉 OpenClaw 移动端客户端。
+  语音唤醒 → 相机+麦克风同时激活 → 实时画面+语音发给 openclaw → AI 回复 + TTS 播放。
+  目标用户：袋鼠帝（公众号写作者），日常需要高频与 AI Agent 交互。
+
+技术栈:
+  React Native + Expo Dev Client (Bare Workflow) + TypeScript
+  Zustand 状态管理 / react-native-vision-camera v4 / React Navigation v6
+  ASR: 豆包流式 API (主) / TTS: Edge TTS + openclaw tts.convert (双路径)
+  后端协议: OpenClaw Gateway WebSocket (JSON req/res/event, protocol v3)
+
+配色/设计方向:
+  暗色主题 (#0a0a0f 背景)，工具优先极简 UI
+  相机预览占屏幕 ~55%，聊天记录在下方
+  录制状态红色脉冲边框，TTS 播放紫色波形动画
+
+----------------------------------------
+会话 #0 - 项目初始化 + 脚手架搭建
+----------------------------------------
+时间: 2026-03-31
+
+完成工作:
+  [x] 探索 openclaw 源码（/Users/kangarooking/Desktop/mygGit/openclaw/）理解 WS 协议
+  [x] 研究 cross-platform 移动框架选型（确定 RN + Expo Dev Client）
+  [x] 创建 GitHub 仓库 https://github.com/kangarooking/mobileclaw
+  [x] 初始化 Expo TS 项目脚手架（package.json/app.json/tsconfig/babel.config）
+  [x] 实现类型定义层：protocol.ts（openclaw 协议帧）、config.ts、session.ts
+  [x] 实现 Zustand store：useAppStore（全局配置/权限）、useSessionStore（会话状态机）
+  [x] 实现存储服务：ConfigStore（AsyncStorage）、SecureStorage（XOR 占位→待替换原生模块）
+  [x] 实现 GatewayClient 核心通信层：challenge→connect→hello-ok 认证、RPC 封装、指数退避重连、心跳
+  [x] 实现相机管线骨架：CameraManager、frameSender（双策略帧发送）
+  [x] 实现音频管线骨架：AudioManager、ASRService（豆包/自定义接口）、TTSService（Edge/豆包/openclaw 双路径）
+  [x] 实现 WakeUpManager 语音唤醒编排器（完整激活/停用链路）
+  [x] 实现 FeishuPushService 飞书推送（卡片 schema + 离线重试队列）
+  [x] 实现 UI 三页面：HomeScreen（Gateway 选择器）、SessionScreen（对讲机视图）、SettingsScreen（配置）
+  [x] 实现通用组件：StatusIndicator、GatewayCard、TranscriptBubble、ResponseBubble、ChatLogList
+  [x] 实现 Hooks：useGateway、useWakeUp
+  [x] pnpm install 所有依赖（17 个包），git push 到 GitHub
+
+关键发现:
+  - openclaw 已有完整 WS 协议（req/res/event JSON 帧），不需要自造协议
+  - openclaw 相机是按需 snap/clip（非连续流），需扩展 video_frame 事件实现实时流
+  - npm 缓存有 root 权限问题（.npm/_cacache 下有 root 所有权文件），pnpm 可正常使用
+  - VisionCamera Frame Processor 必须在独立线程调用 frame.close()，否则秒崩
+  - 半双工模式（ASR/TTS 互斥）比全双工简单可靠，Phase 1 够用
+  - iOS Siri Shortcut 通过 URL scheme（mobileclaw://activate）比 App Intents 简单 80%
+
+下一步:
+  - 按 feature_list.json 优先级顺序完成 feat-02 到 feat-12
+  - 下一优先任务：feat-02 GatewayClient 对接本地 openclaw 真实连接测试
+
+----------------------------------------
+（后续会话在此追加，格式如下）
+----------------------------------------
