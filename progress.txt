@@ -106,5 +106,57 @@ GatewayClient 更新内容：
   - 注意：RN 环境下 Ed25519 签名需要原生 TurboModule（Node.js crypto 不可用）
 
 ----------------------------------------
+会话 #2 - feat-03 VisionCamera 相机预览 + 帧捕获集成
+----------------------------------------
+时间: 2026-03-31
+
+完成工作:
+  [x] feat-03: 集成 react-native-vision-camera 实现真实相机预览和帧捕获
+  [x] 修复 3 个预存 TS 错误（protocol.ts 重复 ChatSendParams、FeishuPushService private 访问、useSessionStore 不存在的 hasVideoContext）
+
+新增文件:
+  - src/components/camera/CameraPreview.tsx — VisionCamera v4 相机预览组件
+    • useCameraDevices() 获取设备列表，优先选后置+低光增强相机
+    • useFrameProcessor(processFrame, []) 挂载帧处理器
+    • runOnJS(handleFrameReady) 桥接 Worklet→JS 主线程
+    • REC 红点 + LIVE 绿色徽章叠加层
+    • 相机不可用时显示错误提示（含平台差异化文案）
+  - src/components/camera/frameProcessorWorklet.ts — 独立线程 Frame Processor Worklet
+    • VisionCamera v4 API：frame.toArrayBuffer() 获取原始像素（v3 的 .close()/.toJpeg() 已移除）
+    • 67ms 节流（~15fps），避免主线程过载
+    • 分块 base64 编码（CHUNK_SIZE=8192 防栈溢出）
+    • jsCallback 回调机制桥接到 JS 主线程
+    • TODO: 后续替换为原生 JPEG 编码插件（当前 raw base64 ~600KB vs JPEG ~30KB）
+
+修改文件:
+  - src/services/camera/CameraManager.ts — 重写适配 v4 API
+    • getAvailableCameraDevices() 无参调用（v3 需传 position 参数）
+    • 移除 supportedFormats/deviceName 等 v3 特有属性
+    • device 类型简化为 unknown
+  - src/services/camera/frameSender.ts — 导入路径修正 + latestFrame 来源修正
+  - src/screens/SessionScreen.tsx — 替换占位 View 为 CameraPreview 组件
+    • isCameraActive 时绿色边框（cameraActiveBorder）
+    • 帧计数器显示接收帧数 + 发送帧数
+    • handleFrameReady 回调更新 receivedFramesRef
+  - src/types/protocol.ts — 删除重复的 ChatSendParams 接口定义
+  - src/services/history/FeishuPushService.ts — pushTurnDirect 改为 public static
+  - src/store/useSessionStore.ts — 移除不存在的 hasVideoContext 解构
+
+VisionCamera v4 关键 API 变更（踩坑记录）：
+  - useFrameProcessor(fn, []) — 第二个参数依赖数组必填（v3 可省略）
+  - runOnJS(fn) 直接调用返回可调用函数（v3 有 useRunOnJS hook）
+  - frame.toArrayBuffer() 替代 frame.toJpeg()（v4 无内置 JPEG 编码）
+  - frame 自动回收，无需手动 .close()（v3 必须调用否则秒崩）
+  - getAvailableCameraDevices() 无参数（v3 需传 position 过滤）
+
+TS 编译状态:
+  - 相机相关错误：0 ✅
+  - 预存 UI 错误：HomeScreen(gateways 缺失)、SettingsScreen(样式类型) — 属于 feat-10 UI 打磨范围
+
+下一步:
+  - feat-04: 双策略视频帧发送（Strategy A 快照附件 + Strategy B 连续 video_frame 事件流）
+  - feat-05: 音频录制管线（AudioSession + PCM 采集 + 波形可视化）
+
+----------------------------------------
 （后续会话在此追加，格式如下）
 ----------------------------------------
