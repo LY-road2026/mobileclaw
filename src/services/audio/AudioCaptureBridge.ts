@@ -14,6 +14,14 @@ const log = getLogger('AudioCaptureBridge');
 const nativeBridge = NativeModules.HeaderWebSocket;
 const nativeEmitter = nativeBridge ? new NativeEventEmitter(nativeBridge) : null;
 
+export function isAudioCaptureBridgeSupported(): boolean {
+  return Boolean(
+    nativeBridge?.startAudioCapture &&
+    nativeBridge?.stopAudioCapture &&
+    nativeEmitter,
+  );
+}
+
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -32,14 +40,15 @@ class AudioCaptureBridge {
     log.info('Starting audio capture bridge...');
 
     try {
-      if (!nativeBridge?.startAudioCapture || !nativeBridge?.stopAudioCapture) {
+      if (!isAudioCaptureBridgeSupported()) {
         throw new Error('HeaderWebSocket audio capture bridge is not available');
       }
-      if (!nativeEmitter) {
+      const emitter = nativeEmitter;
+      if (!emitter) {
         throw new Error('HeaderWebSocket event emitter is not available');
       }
 
-      this.audioSub = nativeEmitter.addListener('onAudioData', (event: { data?: number[] }) => {
+      this.audioSub = emitter.addListener('onAudioData', (event: { data?: number[] }) => {
         if (!this.isCapturing || !Array.isArray(event?.data) || event.data.length === 0) return;
         try {
           const pcmBytes = Uint8Array.from(event.data);
@@ -55,11 +64,11 @@ class AudioCaptureBridge {
         }
       });
 
-      this.errorSub = nativeEmitter.addListener('onAudioCaptureError', (event: { message?: string }) => {
+      this.errorSub = emitter.addListener('onAudioCaptureError', (event: { message?: string }) => {
         log.warn('Native audio capture error:', event?.message || 'unknown error');
       });
 
-      this.statusSub = nativeEmitter.addListener('onAudioCaptureStatus', (event: Record<string, unknown>) => {
+      this.statusSub = emitter.addListener('onAudioCaptureStatus', (event: Record<string, unknown>) => {
         log.info('Native audio capture status:', JSON.stringify(event));
       });
 

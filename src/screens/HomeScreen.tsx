@@ -93,9 +93,14 @@ export function HomeScreen({ navigation }: { navigation: { navigate: (name: stri
       await wakeUpManager.activate(undefined, { useCamera });
       navigation.navigate('Session');
     } catch (error: any) {
-      const msg = error?.message || String(error);
-      console.error('Activation failed:', msg);
-      Alert.alert('启动失败', msg, [{ text: '知道了' }]);
+      const rawMsg = error?.message || String(error);
+      const normalizedMsg =
+        /\bNOT_PAIRED\b/i.test(rawMsg) || /pairing required/i.test(rawMsg)
+          ? '当前设备尚未通过 Gateway 配对，请先在 OpenClaw 侧批准该设备后再重试。'
+          : /already connecting/i.test(rawMsg)
+            ? '网关正在建立连接，请稍等一秒后再试。'
+          : rawMsg;
+      Alert.alert('启动失败', normalizedMsg, [{ text: '知道了' }]);
     }
   };
 

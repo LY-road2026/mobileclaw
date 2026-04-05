@@ -15,7 +15,7 @@ import type { ASRProviderConfig } from '@/types/config';
 import { getLogger } from '@/utils/logger';
 import { AUDIO_SAMPLE_RATE } from '@/utils/constants';
 import { generateUUID, stringToUint8, uint8ToString } from '@/utils/rnCompat';
-import { NativeModules, NativeEventEmitter } from 'react-native';
+import { NativeModules, NativeEventEmitter, Platform } from 'react-native';
 import { gzipSync, unzipSync } from 'fflate';
 
 const log = getLogger('DoubaoASR');
@@ -107,6 +107,15 @@ function getHeaderWSEmitter() {
   return mod ? new NativeEventEmitter(mod) : null;
 }
 
+export function isDoubaoASRSupported(): boolean {
+  return Boolean(
+    getHeaderWS()?.connect &&
+    getHeaderWS()?.sendData &&
+    getHeaderWS()?.close &&
+    getHeaderWSEmitter(),
+  );
+}
+
 // ─── Provider ──────────────────────────────────────────────────────
 
 export class DoubaoASRProvider implements ASRProvider {
@@ -142,6 +151,10 @@ export class DoubaoASRProvider implements ASRProvider {
 
   async initialize(cfg: ASRProviderConfig): Promise<void> {
     this.cfg = cfg;
+    if (cfg.type === 'doubao' && !isDoubaoASRSupported()) {
+      const platformNote = Platform.OS === 'android' ? 'Android 端豆包 ASR 原生桥尚未接入' : 'HeaderWebSocket 原生模块不可用';
+      throw new Error(`${platformNote}，已跳过实时语音识别`);
+    }
     log.info('DoubaoASR init', { endpoint: cfg.endpoint||DEFAULT_ENDPOINT, appId: cfg.appId?.slice(0,4) });
   }
 

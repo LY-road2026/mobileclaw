@@ -40,6 +40,7 @@ import { getLogger } from '@/utils/logger';
 import { DeviceIdentityService } from './DeviceIdentityService';
 import nacl from 'tweetnacl';
 import { stringToUint8 } from '@/utils/rnCompat';
+import { getGatewayPlatformIdentity } from '@/utils/platformIdentity';
 
 const log = getLogger('GatewayClient');
 
@@ -139,8 +140,12 @@ export class GatewayClient {
    */
   async connect(wsUrl: string, authToken: string): Promise<HelloOkPayload> {
     if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
+      if (this.ws.readyState === WebSocket.OPEN && this.helloOkPayload) {
+        log.info('Reusing existing gateway connection');
+        return Promise.resolve(this.helloOkPayload);
+      }
       log.warn('Already connected or connecting');
-      return Promise.reject(new Error('Already connected'));
+      return Promise.reject(new Error('Gateway is already connecting'));
     }
 
     this.url = wsUrl;
@@ -333,14 +338,16 @@ export class GatewayClient {
       return;
     }
 
+    const identity = getGatewayPlatformIdentity();
+
     // Build client info — values here are also used in device auth payload signature
     const clientInfo = {
-      id: 'openclaw-ios' as const,       // Must be valid GatewayClientId enum
+      id: identity.clientId,
       displayName: 'MobileClaw',
       version: '1.0.0',
-      platform: 'ios',
+      platform: identity.platform,
       mode: 'ui' as const,             // Must be valid GatewayClientMode enum
-      deviceFamily: 'iPhone',         // Must match what's signed in device payload!
+      deviceFamily: identity.deviceFamily,
     };
 
     const connectParams: ConnectParams & Record<string, unknown> = {
@@ -351,7 +358,7 @@ export class GatewayClient {
       scopes: ['operator.read', 'operator.write'],
       auth: { token: this.token },
       locale: 'zh-CN',
-      userAgent: 'mobileclaw/1.0.0',
+      userAgent: identity.userAgent,
     };
 
     // If we have device identity, attach it (required for scoped access)
@@ -377,13 +384,13 @@ export class GatewayClient {
   /**
    * Build the device auth object for scoped gateway access.
    */
-  private buildDeviceAuthObject(clientInfo: { platform: string; deviceFamily: string }): ConnectParams['device'] | null {
+  private buildDeviceAuthObject(clientInfo: { id: string; platform: string; deviceFamily: string }): ConnectParams['device'] | null {
     if (!this.deviceIdentity || !this.challengeNonce) return null;
     const signedAt = Date.now();
     const scopes = ['operator.read', 'operator.write'];
     const payload = this.buildDeviceAuthPayload({
       deviceId: this.deviceIdentity.deviceId,
-      clientId: 'openclaw-ios',
+      clientId: clientInfo.id,
       clientMode: 'ui',
       role: 'operator',
       scopes,

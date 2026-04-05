@@ -55,7 +55,7 @@ export interface ConnectChallengePayload {
 }
 
 export interface ClientInfo {
-  id: string;           // e.g., "mobileclaw-ios"
+  id: string;           // e.g., "openclaw-ios" | "openclaw-android"
   displayName?: string;
   version: string;      // e.g., "1.0.0"
   platform: string;     // "ios" | "android" | "macos"
@@ -157,4 +157,3 @@ export interface TTSConvertParams {
   voiceId?: string;
   outputFormat?: string;
 }
-

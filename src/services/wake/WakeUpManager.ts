@@ -9,7 +9,7 @@
  */
 
 import { audioManager } from '@/services/audio/AudioManager';
-import { audioCaptureBridge } from '@/services/audio/AudioCaptureBridge';
+import { audioCaptureBridge, isAudioCaptureBridgeSupported } from '@/services/audio/AudioCaptureBridge';
 import { cameraManager } from '@/services/camera/CameraManager';
 import { FeishuPushService } from '@/services/history/FeishuPushService';
 import { frameSender } from '@/services/camera/frameSender';
@@ -26,6 +26,7 @@ import { SecureStorage } from '@/services/storage/SecureStorage';
 import { DEFAULT_CONFIG } from '@/types/config';
 import { generateUUID } from '@/utils/rnCompat';
 import { getLogger } from '@/utils/logger';
+import { isDoubaoASRSupported } from '@/services/audio/providers/DoubaoASRProvider';
 import type { ActivationParams } from './UrlSchemeHandler';
 
 const log = getLogger('WakeUpManager');
@@ -98,7 +99,7 @@ export class WakeUpManager {
       } catch(e: any) {
         const msg = e?.message || String(e);
         if (msg.includes('permission') || msg.includes('Permission')) {
-          Alert.alert('🎤 麦克风权限被拒', '请到 iPhone 设置 → 隐私 → 麦克风 中允许 MobileClaw 访问，然后重新点击 Tap to Talk。\n\n错误: ' + msg);
+          Alert.alert('🎤 麦克风权限被拒', '请到系统设置中允许 MobileClaw 访问麦克风，然后重新点击 Tap to Talk。\n\n错误: ' + msg);
         } else {
           Alert.alert('录音启动失败', msg);
         }
@@ -164,6 +165,9 @@ export class WakeUpManager {
       step('9/9', 'Starting ASR...');
       try {
         const asrConfig = { ...appStore.config.asr };
+        if (asrConfig.type === 'doubao' && !isDoubaoASRSupported()) {
+          step('9/9', '跳过 ASR：当前平台未接入豆包实时语音桥');
+        } else {
         if (asrConfig.type === 'doubao') {
           const [appId, accessToken] = await Promise.all([
             SecureStorage.getASRAppId(),
@@ -187,10 +191,20 @@ export class WakeUpManager {
         });
         sessionStore.setIsMicActive(true);
         step('9/9', '✅ ASR running');
+        }
       } catch(asrErr) {
-        // ASR failure should NOT block the whole flow
-        Alert.alert('ASR启动失败', `语音识别无法启动，但可以继续使用。\n\n${getErrorMessage(asrErr)}`);
-        log.error('ASR failed (non-critical):', asrErr);
+        const asrMsg = getErrorMessage(asrErr);
+        if (
+          /HeaderWebSocket native module not available/i.test(asrMsg) ||
+          /HeaderWebSocket.*not available/i.test(asrMsg) ||
+          /当前平台未接入豆包实时语音桥/i.test(asrMsg) ||
+          /已跳过实时语音识别/i.test(asrMsg)
+        ) {
+          log.warn('ASR skipped on this platform:', asrMsg);
+        } else {
+          Alert.alert('ASR启动失败', `语音识别无法启动，但可以继续使用。\n\n${asrMsg}`);
+          log.warn('ASR failed (non-critical):', asrMsg);
+        }
       }
 
       // 9. TTS (non-critical)
@@ -236,7 +250,11 @@ export class WakeUpManager {
 
       // 10. PCM capture bridge (non-critical)
       try {
-        await audioCaptureBridge.startCapture();
+        if (isAudioCaptureBridgeSupported()) {
+          await audioCaptureBridge.startCapture();
+        } else {
+          log.info('PCM bridge skipped: native audio capture bridge unavailable on this platform');
+        }
       } catch(bridgeErr) {
         log.warn('PCM bridge skipped:', getErrorMessage(bridgeErr));
         // Don't alert for this — it's expected to fail without proper native module
@@ -248,7 +266,12 @@ export class WakeUpManager {
       log.info('✅✅✅ MobileClaw FULLY ACTIVATED!');
 
     } catch (error) {
-      log.error('Activation failed:', error);
+      const message = getErrorMessage(error);
+      if (/already connecting/i.test(message)) {
+        log.warn('Activation skipped: gateway connection is already in progress');
+      } else {
+        log.warn('Activation failed:', message);
+      }
       sessionStore.endSession();
       throw error;
     }

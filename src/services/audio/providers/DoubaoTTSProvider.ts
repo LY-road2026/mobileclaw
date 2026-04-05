@@ -1,18 +1,17 @@
 /**
- * DoubaoTTSProvider — iOS native SpeechEngine bridge for 豆包/火山 TTS
+ * DoubaoTTSProvider — Native SpeechEngine bridge for 豆包/火山 TTS
  *
- * This follows the official iOS SDK path instead of the previous ad-hoc
- * HTTP call. The native bridge owns the SpeechEngine lifecycle and playback.
+ * iOS uses the existing HeaderWebSocket bridge.
+ * Android is wired to use DoubaoSpeechModule as the native entry point.
  */
 
-import { NativeEventEmitter, NativeModules, type EmitterSubscription } from 'react-native';
+import { type EmitterSubscription } from 'react-native';
 import type { TTSProvider, TTSEventHandlers } from '../TTSService';
 import type { TTSProviderConfig } from '@/types/config';
 import { getLogger } from '@/utils/logger';
+import { doubaoNativeBridge } from '../native/doubaoNative';
 
 const log = getLogger('DoubaoTTS');
-const nativeBridge = NativeModules.HeaderWebSocket;
-const nativeEmitter = nativeBridge ? new NativeEventEmitter(nativeBridge) : null;
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -26,9 +25,14 @@ export class DoubaoTTSProvider implements TTSProvider {
   private pendingReject: ((error: Error) => void) | null = null;
   private pendingHandlers: TTSEventHandlers | null = null;
   private hasStartedPlayback = false;
+  private nativeBridge = doubaoNativeBridge.getBridge();
+  private nativeEmitter = doubaoNativeBridge.getEmitter();
 
   async initialize(config: TTSProviderConfig): Promise<void> {
-    if (!nativeBridge?.initializeDoubaoTTS || !nativeBridge?.speakDoubaoTTS) {
+    this.nativeBridge = doubaoNativeBridge.getBridge();
+    this.nativeEmitter = doubaoNativeBridge.getEmitter();
+
+    if (!this.nativeBridge?.initializeDoubaoTTS || !this.nativeBridge?.speakDoubaoTTS) {
       throw new Error('Doubao native TTS bridge is not available on this platform');
     }
 
@@ -48,7 +52,7 @@ export class DoubaoTTSProvider implements TTSProvider {
     this.ensureListeners();
 
     try {
-      await nativeBridge.initializeDoubaoTTS({
+      await this.nativeBridge.initializeDoubaoTTS({
         appId: nextConfig.appId,
         accessToken: nextConfig.accessToken,
         address: nextConfig.address,
@@ -95,7 +99,7 @@ export class DoubaoTTSProvider implements TTSProvider {
 
       try {
         log.info('DoubaoTTS speaking:', text.slice(0, 60));
-        await nativeBridge.speakDoubaoTTS(text);
+        await this.nativeBridge?.speakDoubaoTTS(text);
       } catch (error) {
         const err = error instanceof Error ? error : new Error(getErrorMessage(error));
         this.rejectPending(err);
@@ -105,7 +109,7 @@ export class DoubaoTTSProvider implements TTSProvider {
 
   async stop(): Promise<void> {
     try {
-      await nativeBridge?.stopDoubaoTTS?.();
+      await this.nativeBridge?.stopDoubaoTTS?.();
     } catch (error) {
       log.warn('DoubaoTTS stop failed:', getErrorMessage(error));
     }
@@ -115,7 +119,7 @@ export class DoubaoTTSProvider implements TTSProvider {
   async destroy(): Promise<void> {
     await this.stop();
     try {
-      await nativeBridge?.destroyDoubaoTTS?.();
+      await this.nativeBridge?.destroyDoubaoTTS?.();
     } catch (error) {
       log.warn('DoubaoTTS destroy failed:', getErrorMessage(error));
     }
@@ -124,11 +128,11 @@ export class DoubaoTTSProvider implements TTSProvider {
   }
 
   private ensureListeners(): void {
-    if (!nativeEmitter) {
+    if (!this.nativeEmitter) {
       throw new Error('Doubao native TTS event emitter is not available');
     }
     if (!this.statusSub) {
-      this.statusSub = nativeEmitter.addListener('onTTSStatus', (event: { status?: string }) => {
+      this.statusSub = this.nativeEmitter.addListener('onTTSStatus', (event: { status?: string }) => {
         const status = event?.status || 'unknown';
         log.info('DoubaoTTS native status:', status);
 
@@ -145,7 +149,7 @@ export class DoubaoTTSProvider implements TTSProvider {
     }
 
     if (!this.errorSub) {
-      this.errorSub = nativeEmitter.addListener('onTTSError', (event: { message?: string; code?: number }) => {
+      this.errorSub = this.nativeEmitter.addListener('onTTSError', (event: { message?: string; code?: number }) => {
         const err = new Error(event?.message || 'Native Doubao TTS failed');
         log.warn('DoubaoTTS native error:', event?.code, err.message);
         this.rejectPending(err);
