@@ -25,6 +25,15 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Patch KSPLookup for Kotlin 1.9.25
+        run: |
+          KSP_FILE="node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-plugin/src/main/kotlin/expo/modules/plugin/KSPLookup.kt"
+          if grep -q '"1.9.25"' "$KSP_FILE"; then
+            echo "KSPLookup already patched"
+          else
+            sed -i 's/val KSPLookup = mapOf(/val KSPLookup = mapOf(\n  "1.9.25" to "1.9.25-1.0.20",/' "$KSP_FILE"
+          fi
+
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
