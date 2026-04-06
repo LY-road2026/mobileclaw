@@ -31,24 +31,25 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v2
 
-      - name: Accept Android licenses
-        run: yes | sdkmanager --licenses || true
+      - name: Create local.properties
+        run: |
+          echo "sdk.dir=$ANDROID_HOME" > android/local.properties
 
-      - name: Build Android APK
-        run: npx expo run:android --variant debug --no-install
+      - name: Expo prebuild
+        run: npx expo prebuild --platform android --clean
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-          ANDROID_HOME: /usr/local/lib/android/sdk
-          JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.18-8/x64
 
-      - name: Find APK
-        id: find-apk
+      - name: Build Android APK
         run: |
-          find . -name "*.apk" -type f 2>/dev/null
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --warning-mode=none -q
+        env:
+          JAVA_HOME: ${{ env.JAVA_HOME }}
 
       - name: Upload APK
-        if: steps.find-apk.outputs.APK_PATH != ''
         uses: actions/upload-artifact@v4
         with:
           name: android-apk
-          path: ${{ steps.find-apk.outputs.APK_PATH }}
+          path: android/app/build/outputs/apk/debug/app-debug.apk
