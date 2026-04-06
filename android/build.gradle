@@ -20,5 +20,8 @@ allprojects {
   }
 }
 
+// Force Kotlin 2.0.21 to fix KSP compatibility
+ext.kotlinVersion = "2.0.21"
+
 apply plugin: "expo-root-project"
 apply plugin: "com.facebook.react.rootproject"
