@@ -48,6 +48,10 @@ jobs:
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
 
+      - name: Remove enableBundleCompression (RN 0.76 incompatibility)
+        run: |
+          sed -i '/enableBundleCompression/d' android/app/build.gradle
+
       - name: Create local.properties
         run: |
           echo "sdk.dir=$ANDROID_HOME" > android/local.properties
